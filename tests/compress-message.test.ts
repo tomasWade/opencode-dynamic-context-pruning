@@ -230,10 +230,10 @@ test("compress message mode batches individual message summaries", async () => {
 test("compress message mode appends protected prompt info", async () => {
     const sessionID = `ses_message_protect_tag_${Date.now()}`
     const rawMessages = buildMessages(sessionID)
-    const assistant = rawMessages.find((message) => message.info.id === "msg-assistant-1")
-    const part = assistant?.parts[0]
+    const user = rawMessages.find((message) => message.info.id === "msg-user-1")
+    const part = user?.parts[0]
     if (part?.type === "text") {
-        part.text = "I mapped the code path. <protect>Always preserve release checklist.</protect>"
+        part.text = "Investigate the issue. <protect>Always preserve release checklist.</protect>"
     }
 
     const state = createSessionState()
@@ -263,9 +263,9 @@ test("compress message mode appends protected prompt info", async () => {
             topic: "Protected note",
             content: [
                 {
-                    messageId: "m0002",
-                    topic: "Code path note",
-                    summary: "Captured the assistant's code-path findings.",
+                    messageId: "m0001",
+                    topic: "User request note",
+                    summary: "Captured the user's investigation request.",
                 },
             ],
         },
@@ -283,6 +283,65 @@ test("compress message mode appends protected prompt info", async () => {
         /The following protected prompt information was included in this conversation verbatim:/,
     )
     assert.match(block?.summary || "", /Always preserve release checklist\./)
+})
+
+test("compress message mode ignores protect tags on ignored user messages", async () => {
+    const sessionID = `ses_message_ignored_protect_tag_${Date.now()}`
+    const rawMessages = buildMessages(sessionID)
+    const user = rawMessages.find((message) => message.info.id === "msg-user-1")
+    const part = user?.parts[0] as any
+    if (part?.type === "text") {
+        part.text = "Ignored notification. <protect>Do not preserve ignored note.</protect>"
+        part.ignored = true
+    }
+
+    const state = createSessionState()
+    const logger = new Logger(false)
+    const config = buildConfig()
+    config.compress.protectTags = true
+    const tool = createCompressMessageTool({
+        client: {
+            session: {
+                messages: async () => ({ data: rawMessages }),
+                get: async () => ({ data: { parentID: null } }),
+            },
+        },
+        state,
+        logger,
+        config,
+        prompts: {
+            reload() {},
+            getRuntimePrompts() {
+                return { compressMessage: "", compressRange: "" }
+            },
+        },
+    } as any)
+
+    await tool.execute(
+        {
+            topic: "Ignored protected note",
+            content: [
+                {
+                    messageId: "m0001",
+                    topic: "Ignored note",
+                    summary: "Captured the ignored user message.",
+                },
+            ],
+        },
+        {
+            ask: async () => {},
+            metadata: () => {},
+            sessionID,
+            messageID: "msg-compress-ignored-protect-tag",
+        },
+    )
+
+    const block = Array.from(state.prune.messages.blocksById.values())[0]
+    assert.doesNotMatch(
+        block?.summary || "",
+        /The following protected prompt information was included in this conversation verbatim:/,
+    )
+    assert.doesNotMatch(block?.summary || "", /Do not preserve ignored note\./)
 })
 
 test("compress message mode stores call id for later duration attachment", async () => {

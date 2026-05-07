@@ -72,6 +72,8 @@ export function appendProtectedPromptInfo(
 
         const message = searchContext.rawMessagesById.get(messageId)
         if (!message) continue
+        if (message.info.role !== "user") continue
+        if (isIgnoredUserMessage(message)) continue
 
         const parts = Array.isArray(message.parts) ? message.parts : []
         for (const part of parts) {
